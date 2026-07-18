@@ -16,7 +16,7 @@ websocket_init(_State) ->
     SendFn = fun(Json) -> Self ! {send, Json} end,
 
     %% Returns Actor<MousePos> = #{pid => Pid}
-    Distributor = timeflies:setup_pipeline(SendFn),
+    Distributor = timeflies_src_timeflies:setup_pipeline(SendFn),
     {ok, #{distributor => Distributor}}.
 
 websocket_handle({text, Json}, State) ->

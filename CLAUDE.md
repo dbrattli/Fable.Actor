@@ -48,4 +48,6 @@ Each target provides a native `fable_actor_platform` module implementing `IActor
 ## Dependencies
 
 - .NET SDK 10+
-- Fable.Core 5.0.0-rc.1
+- Fable 5.11 (local tool, see `.config/dotnet-tools.json`)
+- Fable.Core 5.0.0
+- fable-library 5.11+ (Python target)
