@@ -18,6 +18,7 @@ default:
 # Clean build artifacts
 clean:
     rm -rf apps _build {{build_path}}
+    rm -rf {{timeflies_path}}/apps {{timeflies_path}}/_build {{timeflies_py_out}}
 
 # --- Build ---
 
@@ -88,7 +89,7 @@ test-beam: build
     cd {{justfile_directory()}} && erl \
         -pa _build/default/lib/*/ebin \
         -noshell \
-        -eval "program:main([])" \
+        -eval "main:main([])" \
         -s init stop
 
 # --- Timeflies example ---
