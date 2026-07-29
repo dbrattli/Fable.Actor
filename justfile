@@ -1,12 +1,11 @@
 # Fable.Actor development tasks
 
-# Development mode: use local Fable repo instead of dotnet tool
+# Development mode: compile with a local Fable checkout instead of the pinned dotnet tool.
+# Whatever branch that checkout has out is what gets used — every backend lives in one repo.
 # Usage: just dev=true test-beam
 dev := "false"
-fable_repo := justfile_directory() / "../fable"
-# Python/JS targets build from Fable main; the BEAM backend tracks its own branch.
-fable := if dev == "true" { "dotnet run --project " + fable_repo / "main/src/Fable.Cli" + " --" } else { "dotnet fable" }
-fable_beam := if dev == "true" { "dotnet run --project " + fable_repo / "beam-improvements-17/src/Fable.Cli" + " --" } else { "dotnet fable" }
+fable_repo := justfile_directory() / "../Fable"
+fable := if dev == "true" { "dotnet run --project " + fable_repo / "src/Fable.Cli" + " --" } else { "dotnet fable" }
 
 src_path := "src/Fable.Actor"
 build_path := "build"
@@ -25,7 +24,7 @@ clean:
 
 # Build F# to Erlang via Fable.Beam, then compile with rebar3
 build: clean
-    {{fable_beam}} src/Fable.Actor --exclude Fable.Core --lang beam --outDir apps/fable_actor --noCache
+    {{fable}} src/Fable.Actor --exclude Fable.Core --lang beam --outDir apps/fable_actor --noCache
     rebar3 compile
 
 # Build F# projects only (type check)
@@ -95,7 +94,7 @@ test-js:
 # and the generated rebar.config needs no edits. Quill calls halt/1 with the exit code.
 test-beam:
     rm -rf {{build_path}}/tests-beam
-    {{fable_beam}} {{test_path}} --exclude Fable.Core --lang beam --outDir {{build_path}}/tests-beam
+    {{fable}} {{test_path}} --exclude Fable.Core --lang beam --outDir {{build_path}}/tests-beam
     cd {{build_path}}/tests-beam && rebar3 compile
     cd {{build_path}}/tests-beam && erl -noshell -pa _build/default/lib/*/ebin -eval 'main:main([])'
 
@@ -107,7 +106,7 @@ timeflies_app := timeflies_path / "apps/timeflies"
 
 # Build timeflies example: F# → Erlang, compile with rebar3
 build-timeflies: build
-    {{fable_beam}} {{timeflies_src}} --exclude Fable.Core --lang beam --outDir {{timeflies_app}} --noCache
+    {{fable}} {{timeflies_src}} --exclude Fable.Core --lang beam --outDir {{timeflies_app}} --noCache
     cp {{timeflies_src}}/erl/*.erl {{timeflies_app}}/src/
     cd {{timeflies_path}} && rebar3 compile
 
@@ -144,7 +143,7 @@ timeflies_js_src := timeflies_js_path / "src"
 # Build timeflies-js: F# → JavaScript via Fable
 build-timeflies-js:
     cd {{timeflies_js_path}} && npm install
-    cd {{timeflies_js_path}} && dotnet fable src --noCache
+    cd {{timeflies_js_path}} && {{fable}} src --noCache
 
 # Run timeflies-js demo on http://localhost:3000
 run-timeflies-js: build-timeflies-js
