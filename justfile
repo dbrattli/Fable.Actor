@@ -1,11 +1,11 @@
 # Fable.Actor development tasks
 
-# Development mode: use local Fable repo instead of dotnet tool
+# Development mode: compile with a local Fable checkout instead of the pinned dotnet tool.
+# Whatever branch that checkout has out is what gets used — every backend lives in one repo.
 # Usage: just dev=true test-beam
 dev := "false"
-fable_repo := justfile_directory() / "../fable"
-fable := if dev == "true" { "dotnet run --project " + fable_repo / "beam-improvements-17/src/Fable.Cli" + " --" } else { "dotnet fable" }
-fable_python := if dev == "true" { "dotnet run --project " + fable_repo / "main/src/Fable.Cli" + " --" } else { "dotnet fable" }
+fable_repo := justfile_directory() / "../Fable"
+fable := if dev == "true" { "dotnet run --project " + fable_repo / "src/Fable.Cli" + " --" } else { "dotnet fable" }
 
 src_path := "src/Fable.Actor"
 build_path := "build"
@@ -30,10 +30,11 @@ build: clean
 # Build F# projects only (type check)
 check:
     dotnet build src/Fable.Actor
+    dotnet build {{test_path}}
 
 # Format source files
 format:
-    dotnet fantomas src
+    dotnet fantomas src {{test_path}}
 
 # Setup tooling
 restore:
@@ -65,32 +66,37 @@ shipit *args:
 
 # --- Tests ---
 
-# Run all tests (.NET + Python + BEAM)
-test: test-native test-python test-beam
+# One suite in test/, compiled to each target from the same project. Assertions come from
+# Scriptorium.Nib, the runner from Scriptorium.Quill.
 
-# Run .NET tests only
+# Run the behavioral suite on every target (.NET + Python + JS + BEAM)
+test: test-native test-python test-js test-beam
+
+# .NET target: a real behavioral run — the non-BEAM Actor is MailboxProcessor-based
 test-native:
-    dotnet build {{test_path}}
-    @echo "Running .NET tests..."
     dotnet run --project {{test_path}}
 
-# Run Python tests: compile F# → Python via Fable, then run
+# Python target: compile the suite to Python and run the explicit runner
 test-python:
-    rm -rf {{build_path}}/tests
-    {{fable_python}} {{test_path}} --lang python --outDir {{build_path}}/tests --exclude Fable.Core --noCache
-    @echo "Running Python tests..."
-    cd {{build_path}}/tests && uv run --project ../.. python program.py
+    rm -rf {{build_path}}/tests-py
+    {{fable}} {{test_path}} --exclude Fable.Core --lang python --outDir {{build_path}}/tests-py
+    uv run python {{build_path}}/tests-py/main.py
 
-# Run BEAM tests: compile F# → Erlang via Fable, then run
-test-beam: build
-    {{fable}} {{test_path}} --exclude Fable.Core --lang beam --outDir apps/test --noCache
-    cd {{justfile_directory()}} && rebar3 compile
-    @echo "Running BEAM tests..."
-    cd {{justfile_directory()}} && erl \
-        -pa _build/default/lib/*/ebin \
-        -noshell \
-        -eval "main:main([])" \
-        -s init stop
+# JS target: compile the suite to JS and run it under Node
+test-js:
+    rm -rf {{build_path}}/tests-js
+    {{fable}} {{test_path}} --exclude Fable.Core --lang javascript --outDir {{build_path}}/tests-js
+    echo '{"type":"module"}' > {{build_path}}/tests-js/package.json
+    node {{build_path}}/tests-js/Main.js
+
+# BEAM target: compile the suite to Erlang, build with rebar3, run on the BEAM VM.
+# Fable pulls the Fable.Actor sources into the same outDir, so this app is self-contained
+# and the generated rebar.config needs no edits. Quill calls halt/1 with the exit code.
+test-beam:
+    rm -rf {{build_path}}/tests-beam
+    {{fable}} {{test_path}} --exclude Fable.Core --lang beam --outDir {{build_path}}/tests-beam
+    cd {{build_path}}/tests-beam && rebar3 compile
+    cd {{build_path}}/tests-beam && erl -noshell -pa _build/default/lib/*/ebin -eval 'main:main([])'
 
 # --- Timeflies example ---
 
@@ -121,7 +127,7 @@ timeflies_py_out := timeflies_py_path / "output"
 # Build timeflies-python: F# → Python via Fable
 build-timeflies-python:
     rm -rf {{timeflies_py_out}}
-    {{fable_python}} {{timeflies_py_src}} --lang python --outDir {{timeflies_py_out}} --exclude Fable.Core --noCache
+    {{fable}} {{timeflies_py_src}} --lang python --outDir {{timeflies_py_out}} --exclude Fable.Core --noCache
     touch {{timeflies_py_out}}/src/__init__.py
     touch {{timeflies_py_out}}/src/Fable_Actor/__init__.py
 
@@ -137,7 +143,7 @@ timeflies_js_src := timeflies_js_path / "src"
 # Build timeflies-js: F# → JavaScript via Fable
 build-timeflies-js:
     cd {{timeflies_js_path}} && npm install
-    cd {{timeflies_js_path}} && dotnet fable src --noCache
+    cd {{timeflies_js_path}} && {{fable}} src --noCache
 
 # Run timeflies-js demo on http://localhost:3000
 run-timeflies-js: build-timeflies-js
