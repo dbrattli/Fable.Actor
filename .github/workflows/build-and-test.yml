@@ -29,6 +29,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
       - name: Install uv
         uses: astral-sh/setup-uv@v6
 
@@ -41,20 +46,21 @@ jobs:
       - name: Build library
         run: dotnet build src/Fable.Actor
 
-      - name: Build tests
-        run: dotnet build test
-
+      # The shared suite (test/shared) runs on .NET, Python, JS and BEAM
       - name: Run .NET tests
-        run: dotnet run --project test
-
-      - name: Compile tests to Python
-        run: dotnet fable test --lang python --outDir build/tests --exclude Fable.Core --noCache
+        run: just test-native
 
       - name: Run Python tests
-        run: cd build/tests && uv run --project ../.. python program.py
+        run: just test-python
 
-      - name: Build BEAM and run tests
+      - name: Run JS tests
+        run: just test-js
+
+      - name: Run BEAM tests
         run: just test-beam
+
+      - name: Build BEAM library
+        run: just build
 
       - name: Pack NuGet
         run: just pack

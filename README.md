@@ -18,11 +18,16 @@ just format   # Format source with Fantomas
 
 ## Test
 
+One shared behavioral suite (`test/shared`) runs on every target, with a small runner project per
+target (`test/dotnet`, `test/python`, `test/js`, `test/beam`). Tests are written with
+[Scriptorium](https://github.com/fable-hub/Scriptorium) — Quill for the runner, Nib for assertions.
+
 ```sh
-just test-native   # Run .NET tests
+just test-native   # Run on .NET (MailboxProcessor implementation)
 just test-python   # Compile to Python via Fable, then run
-just test-beam     # Compile to Erlang via Fable, then run
-just test          # Run .NET + Python tests
+just test-js       # Compile to JavaScript via Fable, then run under Node
+just test-beam     # Compile to Erlang via Fable, then run on the BEAM VM
+just test          # All four
 ```
 
 ## Quick Start
