@@ -19,20 +19,20 @@ just test-beam                   # BEAM only
 
 ## Tests
 
-One shared behavioral suite, one runner project per target — the same layout as
-[Fable.Giraffe](https://github.com/dbrattli/Fable.Giraffe):
+One suite, one project (`test/Fable.Actor.Tests.fsproj`), compiled to each target:
 
 ```
-test/shared/    Helpers.fs, ActorTests.fs, SupervisionTests.fs, BuilderTests.fs
-test/dotnet/    Main.fs + Fable.Actor.Tests.fsproj          (dotnet run)
-test/python/    Main.fs + Fable.Actor.Tests.Python.fsproj   (Fable -> Python)
-test/js/        Main.fs + Fable.Actor.Tests.Js.fsproj       (Fable -> JS/Node)
-test/beam/      Main.fs + Fable.Actor.Tests.Beam.fsproj     (Fable -> Erlang)
+test/Helpers.fs  ActorTests.fs  SupervisionTests.fs  BuilderTests.fs  Main.fs
 ```
 
 Assertions come from [Scriptorium](https://github.com/fable-hub/Scriptorium) — Nib for
-`assertThat x (isEqualTo y)`, Quill for the runner (`runTests [ ... ]`). Each runner project
-compiles the same `test/shared` files, so a target-specific `Main.fs` is the only per-target code.
+`assertThat x (isEqualTo y)`, Quill for the runner (`runTests [ ... ]`).
+
+Do **not** split this into a project per target. Fable.Giraffe does, because it has a src project
+per target that each test project must reference; Fable.Actor has one library project with
+`#if FABLE_COMPILER_BEAM` inside, and `Fable.Beam` arrives transitively through the project
+reference. One project compiles cleanly to all four targets from a shared `obj/`, no `--noCache`
+needed. Split only if a target ever needs its own package or rebar dependency.
 
 Notes:
 

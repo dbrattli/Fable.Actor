@@ -7,19 +7,18 @@
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../shared/Helpers.fs" />
-    <Compile Include="../shared/ActorTests.fs" />
-    <Compile Include="../shared/SupervisionTests.fs" />
-    <Compile Include="../shared/BuilderTests.fs" />
+    <Compile Include="Helpers.fs" />
+    <Compile Include="ActorTests.fs" />
+    <Compile Include="SupervisionTests.fs" />
+    <Compile Include="BuilderTests.fs" />
     <Compile Include="Main.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Fable.Core" Version="5.2.0" />
-    <PackageReference Include="Fable.Beam" Version="5.0.0-rc.*" />
     <PackageReference Include="Scriptorium.Quill" Version="0.5.1" />
     <PackageReference Include="Scriptorium.Nib" Version="0.4.1" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/Fable.Actor/Fable.Actor.fsproj" />
+    <ProjectReference Include="../src/Fable.Actor/Fable.Actor.fsproj" />
   </ItemGroup>
 </Project>

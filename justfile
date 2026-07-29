@@ -31,7 +31,7 @@ build: clean
 # Build F# projects only (type check)
 check:
     dotnet build src/Fable.Actor
-    dotnet build {{test_path}}/dotnet
+    dotnet build {{test_path}}
 
 # Format source files
 format:
@@ -67,36 +67,35 @@ shipit *args:
 
 # --- Tests ---
 
-# The suite lives in test/shared and is compiled by one runner project per target
-# (test/dotnet, test/python, test/js, test/beam). Assertions come from Scriptorium.Nib,
-# the runner from Scriptorium.Quill.
+# One suite in test/, compiled to each target from the same project. Assertions come from
+# Scriptorium.Nib, the runner from Scriptorium.Quill.
 
-# Run the shared behavioral suite on every target (.NET + Python + JS + BEAM)
+# Run the behavioral suite on every target (.NET + Python + JS + BEAM)
 test: test-native test-python test-js test-beam
 
 # .NET target: a real behavioral run — the non-BEAM Actor is MailboxProcessor-based
 test-native:
-    dotnet run --project {{test_path}}/dotnet
+    dotnet run --project {{test_path}}
 
-# Python target: compile the shared suite to Python and run the explicit runner
+# Python target: compile the suite to Python and run the explicit runner
 test-python:
     rm -rf {{build_path}}/tests-py
-    {{fable}} {{test_path}}/python --exclude Fable.Core --lang python --outDir {{build_path}}/tests-py
+    {{fable}} {{test_path}} --exclude Fable.Core --lang python --outDir {{build_path}}/tests-py
     uv run python {{build_path}}/tests-py/main.py
 
-# JS target: compile the shared suite to JS and run it under Node
+# JS target: compile the suite to JS and run it under Node
 test-js:
     rm -rf {{build_path}}/tests-js
-    {{fable}} {{test_path}}/js --exclude Fable.Core --lang javascript --outDir {{build_path}}/tests-js
+    {{fable}} {{test_path}} --exclude Fable.Core --lang javascript --outDir {{build_path}}/tests-js
     echo '{"type":"module"}' > {{build_path}}/tests-js/package.json
     node {{build_path}}/tests-js/Main.js
 
-# BEAM target: compile the shared suite to Erlang, build with rebar3, run on the BEAM VM.
+# BEAM target: compile the suite to Erlang, build with rebar3, run on the BEAM VM.
 # Fable pulls the Fable.Actor sources into the same outDir, so this app is self-contained
 # and the generated rebar.config needs no edits. Quill calls halt/1 with the exit code.
 test-beam:
     rm -rf {{build_path}}/tests-beam
-    {{fable_beam}} {{test_path}}/beam --exclude Fable.Core --lang beam --outDir {{build_path}}/tests-beam
+    {{fable_beam}} {{test_path}} --exclude Fable.Core --lang beam --outDir {{build_path}}/tests-beam
     cd {{build_path}}/tests-beam && rebar3 compile
     cd {{build_path}}/tests-beam && erl -noshell -pa _build/default/lib/*/ebin -eval 'main:main([])'
 
