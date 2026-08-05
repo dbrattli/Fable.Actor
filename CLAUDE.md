@@ -88,5 +88,5 @@ Each target provides a native `fable_actor_platform` module implementing `IActor
   sub-namespaces into nested `Sinks/src/` directories that rebar3 never compiles, which breaks
   Scriptorium.Parchment on BEAM
 - Fable.Core 5.0.0 (library) / 5.2.0 (test projects, required by Scriptorium)
-- fable-library 5.11+ (Python target)
+- fable-library 5.13+ (Python target)
 - Scriptorium.Quill 0.5.1 + Scriptorium.Nib 0.4.1 (test projects only)
