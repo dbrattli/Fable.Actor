@@ -17,6 +17,10 @@ type LetterMsg =
 /// A distributor actor fans out mouse events to all letter actors.
 /// Returns the distributor actor — send MousePos to it.
 /// Kill the distributor to clean up (linked children die automatically).
+///
+/// decision: gives each letter a linked actor so delay and lifecycle remain isolated per letter
+/// invariant: only Delayed messages emit positions; MouseMove messages schedule them back to the same actor
+/// tradeoff: creates one actor and timer per letter to make the actor topology visible in the demo
 let setupPipeline (sendFn: string -> unit) : Actor<MousePos> =
     Actor.spawn (fun inbox ->
         // Each letter is a linked child actor with a delay

@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Repository-wide contributor and Agent Decision Comment instructions live in
+`AGENTS.md`. Read and follow that file before modifying code.
+
 ## Project Overview
 
 Fable.Actor is a cross-platform actor library written in F# and compiled via [Fable](https://github.com/fable-compiler/Fable) to BEAM (Erlang), Python, and JavaScript. It provides typed actors with supervision, designed to be the foundation that Rx libraries (like AsyncRx) can build on.

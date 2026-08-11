@@ -19,6 +19,8 @@ websocket_init(_State) ->
     Distributor = timeflies_src_timeflies:setup_pipeline(SendFn),
     {ok, #{distributor => Distributor}}.
 
+%% decision: sends the Fable.Actor envelope directly to demonstrate native Erlang interoperability
+%% invariant: the message tag and MousePos map keys match the compiled F# wire representation
 websocket_handle({text, Json}, State) ->
     case jsx:decode(Json, [return_maps]) of
         #{<<"x">> := X, <<"y">> := Y} when is_integer(X), is_integer(Y) ->

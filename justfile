@@ -3,6 +3,8 @@
 # Development mode: compile with a local Fable checkout instead of the pinned dotnet tool.
 # Whatever branch that checkout has out is what gets used — every backend lives in one repo.
 # Usage: just dev=true test-beam
+# decision: switches every backend through one fable variable so dev mode cannot silently mix compiler versions
+# assumption: the sibling ../Fable checkout contains src/Fable.Cli when dev=true
 dev := "false"
 fable_repo := justfile_directory() / "../Fable"
 fable := if dev == "true" { "dotnet run --project " + fable_repo / "src/Fable.Cli" + " --" } else { "dotnet fable" }
@@ -68,6 +70,9 @@ shipit *args:
 
 # One suite in test/, compiled to each target from the same project. Assertions come from
 # Scriptorium.Nib, the runner from Scriptorium.Quill.
+# decision: compiles one test project to all targets because the library itself has one conditional project
+# invariant: every test recipe executes the same F# suite through its target runtime
+# tradeoff: target-specific setup stays in recipes and Helpers.fs to prevent divergent suites
 
 # Run the behavioral suite on every target (.NET + Python + JS + BEAM)
 test: test-native test-python test-js test-beam

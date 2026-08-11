@@ -48,7 +48,9 @@ let mainAsync =
         )
         |> ignore
 
-        // Async main loop: process tkinter events + yield to asyncio
+        // decision: pumps Tk without blocking and yields explicitly so actor work shares the asyncio thread
+        // invariant: each loop drains pending Tk events before yielding to asyncio
+        // tradeoff: polls every 5 ms to integrate two event loops without another thread
         while true do
             while root.dooneevent (int Flags.DONT_WAIT) do
                 ()

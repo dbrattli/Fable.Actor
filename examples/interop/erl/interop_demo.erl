@@ -37,6 +37,8 @@ run() ->
     %% F# ReplyChannel<string> compiles to: #{reply => fun(V) -> ... end}
     %% Erlang can construct this map manually to call F# actors.
     io:format("  [Joe/Erlang] Asking Dag his full name (call pattern)...~n"),
+    %% decision: capture the caller before constructing the callback because it executes in Dag's process
+    %% invariant: every reply carries the unique ref used by the matching selective receive
     Ref = make_ref(),
     Me = self(),  %% Capture caller pid BEFORE the lambda (self() in lambda runs in callee's process!)
     Rc = #{reply => fun(V) -> Me ! {fable_actor_reply, Ref, V} end},

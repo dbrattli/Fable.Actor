@@ -5,6 +5,10 @@
 ///   - Actor.send wraps in {fable_actor_msg, Msg} envelope
 ///   - ReplyChannel compiles to #{reply => fun(V) -> ... end}
 ///   - Raw Erlang sends bypass the envelope
+///
+/// decision: demonstrates the wire protocol explicitly so native Erlang can interoperate without an F# adapter
+/// invariant: envelope and reply tags match Fable.Actor.Platform.InternalMsg
+/// assumption: Fable preserves the documented DU tuple and record map representations
 module InteropExample
 
 open Fable.Core
@@ -31,7 +35,10 @@ type DagMsg =
 
 // --- Dag: the F# actor ---
 
-/// Start Dag. He keeps Joe's raw pid as state so he can reply.
+/// Start Dag and keep Joe's raw pid as private actor state.
+///
+/// decision: replies to HelloFrom with a raw Erlang message to demonstrate bypassing the actor envelope
+/// invariant: AskName replies through ReplyChannel while HelloFrom replies directly to joePid
 let startDag (joePid: obj) : Actor<DagMsg * ReplyChannel<string>> =
     Actor.start joePid (fun joePid (msg, rc) ->
         match msg with
