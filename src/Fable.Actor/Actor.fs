@@ -6,6 +6,10 @@
 // Actor<'Msg> provides MailboxProcessor-compatible API:
 //   inbox.Receive() — get next message (inside body)
 //   actor.Post(msg)  — send a message (from outside)
+//
+// decision: presents one actor API while selecting native BEAM processes or MailboxProcessor at compile time
+// invariant: actors exchange state across process boundaries only through messages
+// tradeoff: maintains two runtime implementations to preserve each target's native concurrency semantics
 namespace Fable.Actor
 
 open Fable.Actor.Types
@@ -20,6 +24,12 @@ open Fable.Beam
 open Fable.Actor.Platform
 
 // === BEAM: CPS-based, native processes ===
+
+/// A synchronous continuation chain for an operation running inside one BEAM process.
+///
+/// decision: represents BEAM actor operations as CPS because receive blocks the lightweight process natively
+/// invariant: a successfully completed operation invokes its continuation exactly once before Run returns
+/// tradeoff: uses a target-specific computation type to avoid introducing an async scheduler on BEAM
 
 type ActorOp<'T> = { Run: ('T -> unit) -> unit }
 
@@ -56,11 +66,11 @@ type ActorBuilder() =
                     (handler ex).Run cont
     }
 
-    /// CPS try/finally. BEAM ops invoke their continuation synchronously, so we
-    /// capture the body's result via an inner continuation, run the compensation,
-    /// and only then call the outer continuation — otherwise the compensation
-    /// would run *after* the rest of the actor body, not when the body completes.
-    /// The compensation runs exactly once, on both normal and exceptional exit.
+    /// Run cleanup when a CPS body completes or raises.
+    ///
+    /// decision: captures the result before continuing so compensation precedes the rest of the actor body
+    /// invariant: compensation runs exactly once on both normal and exceptional completion
+    /// assumption: ActorOp continuations run synchronously — delayed continuation would expose an uninitialized result
     member _.TryFinally(body: ActorOp<'T>, compensation: unit -> unit) : ActorOp<'T> = {
         Run =
             fun cont ->
@@ -91,12 +101,11 @@ type ActorBuilder() =
     member this.For(items: seq<'T>, body: 'T -> ActorOp<unit>) : ActorOp<unit> =
         this.Using(items.GetEnumerator(), fun enum -> this.While((fun () -> enum.MoveNext()), this.Delay(fun () -> body enum.Current)))
 
-    /// Bridge an Async into the actor CE. On BEAM, Async is erased to synchronous
-    /// callbacks (there is no async scheduler — concurrency comes from spawning
-    /// actors, and Async.Parallel, not from sequential Async), so running it to
-    /// completion via Async.RunSynchronously simply executes the callback chain the
-    /// async already is — inline in this process. This makes `do! someAsyncCall`
-    /// work inside actor { }. BEAM-only: on other targets ActorOp = Async natively.
+    /// Bridge an Async into the actor CE.
+    ///
+    /// decision: runs sequential Async inline so Async-returning APIs compose inside actor expressions
+    /// assumption: Fable.Beam erases sequential Async to synchronous callbacks; Async.Parallel is the spawning exception
+    /// tradeoff: supports shared Async APIs but does not add scheduler-based concurrency to a BEAM actor
     member _.Bind(op: Async<'T>, f: 'T -> ActorOp<'U>) : ActorOp<'U> = {
         Run = fun cont -> (f (Async.RunSynchronously op)).Run cont
     }
@@ -104,6 +113,9 @@ type ActorBuilder() =
 #else
 
 // === Non-BEAM: MailboxProcessor-based ===
+
+// decision: aliases actor operations to Async so existing Fable runtimes provide scheduling and cancellation
+// invariant: ActorBuilder delegates control-flow semantics to the standard async builder on non-BEAM targets
 
 type ActorOp<'T> = Async<'T>
 
@@ -116,6 +128,9 @@ type Actor<'Msg> = {
 
     member this.Receive() : Async<'Msg> = this.Mb.Receive()
 
+    /// Queue a message unless this actor has already been killed.
+    ///
+    /// invariant: posting after cancellation is a no-op rather than an exception
     member this.Post(msg: 'Msg) =
         if not this.Cts.IsCancellationRequested then
             this.Mb.Post(msg)
@@ -141,7 +156,11 @@ type ActorBuilder() =
 
 #endif
 
-/// A supervised child — wraps an actor ref with restart capability.
+/// A supervised child with the information required to restart it.
+///
+/// decision: retains the body and mutates the public actor handle so callers can follow restarts through one value
+/// invariant: Actor refers to the latest child after handleChildExit returns true
+/// tradeoff: the stable wrapper contains mutable state to keep the restarted actor address current
 type SupervisedChild<'ParentMsg, 'Msg> = {
     mutable Actor: Actor<'Msg>
     Body: Actor<'Msg> -> ActorOp<unit>
@@ -171,6 +190,8 @@ module Actor =
         { Pid = rawPid }
 
     /// Spawn a linked child actor (parent gets EXIT signal on crash).
+    ///
+    /// assumption: the caller is the supplied parent process — BEAM links the child to the calling process
     let spawnLinked (_parent: Actor<'ParentMsg>) (body: Actor<'Msg> -> ActorOp<unit>) : Actor<'Msg> =
         let rawPid =
             Erlang.spawnLink (fun () ->
@@ -186,12 +207,17 @@ module Actor =
     let kill (actor: Actor<'Msg>) : unit = killProcess actor.Pid
 
     /// Enable supervision — child EXIT signals become messages.
+    ///
+    /// assumption: called inside the supervising actor because trap_exit affects only the current BEAM process
     let trapExits () : unit = Platform.trapExits ()
 
     /// Format a crash reason as a string.
     let formatReason (reason: obj) : string = Platform.formatReason reason
 
     /// Send a message and await a reply (inside actor { }).
+    ///
+    /// decision: correlates every call with a fresh Erlang ref so concurrent replies cannot be confused
+    /// invariant: waiting for this call consumes only the reply carrying its ref
     let call (actor: Actor<'Msg * ReplyChannel<'Reply>>) (msg: 'Msg) : ActorOp<'Reply> = {
         Run =
             fun cont ->
@@ -206,9 +232,10 @@ module Actor =
                 cont (recvReply ref)
     }
 
-    /// Send a message and await a reply as an Async (usable from async { } contexts).
-    /// BEAM processes block natively, so the CPS Run continuation fires synchronously
-    /// once the reply arrives — capture it and return.
+    /// Send a message and await a reply as an Async (usable from async expressions).
+    ///
+    /// decision: captures the synchronous CPS result to bridge ActorOp back into shared Async-based APIs
+    /// assumption: call invokes its continuation synchronously after the blocking BEAM receive completes
     let callAsync (actor: Actor<'Msg * ReplyChannel<'Reply>>) (msg: 'Msg) : Async<'Reply> =
         async {
             let mutable result = Unchecked.defaultof<'Reply>
@@ -218,6 +245,8 @@ module Actor =
 
     /// Send a message and await a reply with a timeout in milliseconds.
     /// Raises TimeoutException if no reply is received within the timeout.
+    ///
+    /// invariant: the selective receive leaves unrelated mailbox messages untouched
     let callWithTimeout (timeout: int) (actor: Actor<'Msg * ReplyChannel<'Reply>>) (msg: 'Msg) : ActorOp<'Reply> = {
         Run =
             fun cont ->
@@ -244,6 +273,9 @@ module Actor =
 
     /// Spawn an actor with an optional external cancellation token.
     /// When the external token is cancelled, the actor's CTS is also cancelled.
+    ///
+    /// decision: links external cancellation to a private CTS instead of putting the token in the actor's Async context
+    /// invariant: cancelling the external token prevents subsequent posts through the returned actor handle
     let spawnWithToken (cancellationToken: System.Threading.CancellationToken) (body: Actor<'Msg> -> Async<unit>) : Actor<'Msg> =
         let cts = new System.Threading.CancellationTokenSource()
 
@@ -263,6 +295,8 @@ module Actor =
         | None -> { Mb = mb; Cts = cts }
 
     /// Spawn an actor. Body receives inbox (self-reference) for Receive/Post.
+    ///
+    /// decision: owns a private CTS for explicit kill semantics without polluting operations in the actor body
     let spawn (body: Actor<'Msg> -> Async<unit>) : Actor<'Msg> =
         let cts = new System.Threading.CancellationTokenSource()
         let mutable inbox: Actor<'Msg> option = None
@@ -278,6 +312,9 @@ module Actor =
         | None -> { Mb = mb; Cts = cts }
 
     /// Spawn a linked child actor. On crash, delivers ChildExited to parent.
+    ///
+    /// decision: emulates BEAM links by converting an unhandled body exception into a message to the parent
+    /// invariant: normal body completion does not emit ChildExited on non-BEAM targets
     let spawnLinked (parent: Actor<'ParentMsg>) (body: Actor<'Msg> -> Async<unit>) : Actor<'Msg> =
         let cts = new System.Threading.CancellationTokenSource()
         let mutable inbox: Actor<'Msg> option = None
@@ -298,12 +335,16 @@ module Actor =
         | Some a -> a
         | None -> { Mb = mb; Cts = cts }
 
-    /// Kill an actor — cancels its token and disposes the MailboxProcessor.
+    /// Kill an actor by cancelling its lifecycle and disposing its mailbox.
+    ///
+    /// invariant: after kill returns, Post ignores new messages through this handle
     let kill (actor: Actor<'Msg>) : unit =
         actor.Cts.Cancel()
         (actor.Mb :> System.IDisposable).Dispose()
 
     /// Enable supervision (stub on non-BEAM).
+    ///
+    /// decision: remains a no-op because spawnLinked already converts non-BEAM child crashes into messages
     let trapExits () : unit = ()
 
     /// Send a message and await a reply (inside actor { }).
@@ -320,6 +361,9 @@ module Actor =
 
     /// Send a message and await a reply with a timeout in milliseconds.
     /// Raises TimeoutException if no reply is received within the timeout.
+    ///
+    /// decision: polls a ReplyChannel every 5 ms because the portable path cannot use MailboxProcessor timeout overloads
+    /// tradeoff: timeout detection can lag by one polling interval to keep one implementation for .NET, Python, and JS
     let callWithTimeout (timeout: int) (target: Actor<'Msg * ReplyChannel<'Reply>>) (msg: 'Msg) : ActorOp<'Reply> =
         let mutable result: 'Reply option = None
         let rc: ReplyChannel<'Reply> = { Reply = fun r -> result <- Some r }
@@ -374,8 +418,11 @@ module Actor =
         }
 
     /// Handle a ChildExited event for a supervised child.
-    /// Returns true if the child was restarted, false if stopped/not matching.
+    /// Returns true if the child was restarted and false if it was stopped.
     /// Raises ProcessExitException if Escalate.
+    ///
+    /// assumption: exited belongs to supervised — this function does not compare their process identifiers
+    /// invariant: Restart replaces supervised.Actor before returning true
     let handleChildExit (parent: Actor<'ParentMsg>) (supervised: SupervisedChild<'ParentMsg, 'Msg>) (exited: ChildExited) : bool =
         let (OneForOne decider) = supervised.Strategy
 
@@ -415,8 +462,11 @@ module Actor =
         }
 
     /// Handle a ChildExited event for a supervised child.
-    /// Returns true if the child was restarted, false if stopped/not matching.
+    /// Returns true if the child was restarted and false if it was stopped.
     /// Raises ProcessExitException if Escalate.
+    ///
+    /// assumption: exited belongs to supervised — this function does not compare their process identifiers
+    /// invariant: Restart replaces supervised.Actor before returning true
     let handleChildExit (parent: Actor<'ParentMsg>) (supervised: SupervisedChild<'ParentMsg, 'Msg>) (exited: ChildExited) : bool =
         let (OneForOne decider) = supervised.Strategy
 
@@ -441,10 +491,15 @@ module Actor =
     let send (actor: Actor<'Msg>) (msg: 'Msg) : unit = actor.Post(msg)
 
     /// Fire-and-forget message to a call-capable actor (no-op reply channel).
+    ///
+    /// decision: supplies a no-op channel so one actor protocol can accept both casts and calls
     let cast (actor: Actor<'Msg * ReplyChannel<'Reply>>) (msg: 'Msg) : unit =
         actor.Post((msg, { Reply = fun _ -> () }))
 
     /// Start a stateful actor with a message handler.
+    ///
+    /// decision: threads state through a single receive loop so updates remain private and serialized
+    /// invariant: the next message is not handled until the current handler returns its Next value
     let start (initialState: 'State) (handler: 'State -> 'Msg -> Next<'State>) : Actor<'Msg> =
         let body (inbox: Actor<'Msg>) =
             let rec loop state =
@@ -500,7 +555,10 @@ module Actor =
 
 #endif
 
-    /// Extract the raw platform handle from an actor.
+    /// Extract the raw platform handle from an actor for native interoperability.
+    ///
+    /// decision: exposes an explicit escape hatch while keeping ordinary messaging behind the typed Actor wrapper
+    /// tradeoff: the returned handle is target-specific and is not portable application state
 #if FABLE_COMPILER_BEAM
     let pid (actor: Actor<'Msg>) : Pid<'Msg> = actor.Pid
 #else

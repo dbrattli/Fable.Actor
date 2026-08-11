@@ -18,9 +18,9 @@ let getField (o: obj) (key: string) : obj = nativeOnly
 
 [<ReactComponent>]
 let App () =
-    // Mutable positions (actors update this directly)
+    // decision: stores positions in a ref and uses one scalar state value to trigger React rendering
+    // tradeoff: mutates a component-local array to avoid copying every position for each letter update
     let posRef = React.useRef (Array.init Timeflies.text.Length (fun _ -> (-100, -100)))
-    // Counter to trigger re-renders
     let _, setTick = React.useState 0
     let tickRef = React.useRef 0
 

@@ -7,6 +7,9 @@ open Fable.Actor.Types
 // Scriptorium (Nib + Quill); what is left here is the glue the suite needs to drive actors —
 // a per-target sleep, the bridge that hands an `ActorOp` to Quill (which speaks `Async`), and a
 // reporter actor for observing state that has to cross a process boundary on BEAM.
+//
+// decision: keeps one behavioral suite for every target so platform branches must satisfy the same API contract
+// invariant: target-specific test plumbing remains contained in this module
 [<AutoOpen>]
 module Helpers =
 
@@ -29,9 +32,10 @@ module Helpers =
             return ()
         }
 
-    /// Bridge an `ActorOp` into the `Async` that Quill's `testAsync` expects. On BEAM `ActorOp`
-    /// is a CPS record and `Async` is erased to synchronous callbacks, so running the
-    /// continuation chain inline is all there is to do — there is no scheduler to hand it to.
+    /// Bridge an ActorOp into the Async that Quill expects.
+    ///
+    /// decision: runs the CPS continuation inline because BEAM Async is erased to synchronous callbacks
+    /// assumption: the operation completes synchronously on BEAM before the returned Async completes
     let toAsync (op: ActorOp<unit>) : Async<unit> = async { op.Run(fun () -> ()) }
 
 #else
@@ -44,10 +48,10 @@ module Helpers =
 
 #endif
 
-    /// A reporter actor: a one-cell mailbox for state that has to cross a process boundary.
-    /// On BEAM a `let mutable` captured by a spawned actor is a copy, so a test publishes its
-    /// observation with `Actor.cast reporter (Some v)` and reads it back with
-    /// `Actor.call reporter None`.
+    /// A one-cell actor for observing state across a process boundary.
+    ///
+    /// decision: reports observations through messages because BEAM actors copy captured mutable values
+    /// invariant: Some replaces the cell and None replies with its latest value
     let reporter initial =
         Actor.start initial (fun state (msg, rc) ->
             match msg with

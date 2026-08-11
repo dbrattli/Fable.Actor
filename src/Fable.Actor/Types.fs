@@ -6,19 +6,28 @@ module Fable.Actor.Types
 open Fable.Core
 
 /// A reply channel that the receiver calls to send a response back to the caller.
+///
+/// decision: uses a callback record instead of AsyncReplyChannel so the call protocol compiles to every target
 type ReplyChannel<'Reply> = { Reply: 'Reply -> unit }
 
-/// Opaque handle for a scheduled timer (erased to the platform-native handle).
+/// Opaque handle for a scheduled timer.
+///
+/// decision: erases the wrapper so each target can retain its native cancellation handle without exposing it
 [<Erase>]
 type TimerHandle = TimerHandle of obj
 
 /// What the actor should do after handling a message.
+///
+/// decision: makes normal and abnormal termination explicit handler results so supervision can distinguish them
+/// invariant: StopAbnormal raises its exception from the actor loop and therefore triggers linked supervision
 type Next<'State> =
     | Continue of 'State
     | Stop
     | StopAbnormal of exn
 
 /// Notification when a child actor dies.
+///
+/// decision: keeps pid and reason opaque because their runtime representations differ across targets
 type ChildExited = { Pid: obj; Reason: obj }
 
 exception ProcessExitException of string
@@ -31,4 +40,6 @@ type Directive =
     | Escalate
 
 /// Supervision strategy — consulted when a child crashes.
+///
+/// decision: starts with one-for-one supervision because each SupervisedChild owns one independently restartable body
 type Strategy = OneForOne of decider: (exn -> Directive)
