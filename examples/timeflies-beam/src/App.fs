@@ -22,4 +22,4 @@ let start () =
     startClear (Erlang.binaryToAtom "timeflies_listener") (tcpPort 3000) (protocolOpts dispatch)
     |> ignore
 
-    io.format ("Timeflies demo running at http://localhost:3000~n", [])
+    format "Timeflies demo running at http://localhost:3000~n" []
